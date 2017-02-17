@@ -1,0 +1,334 @@
+﻿// ECMAScript 5 strict mode
+"use strict";
+
+assert2(cr, "cr namespace not created");
+assert2(cr.plugins_, "cr.plugins_ not created");
+
+/////////////////////////////////////
+// Plugin class
+cr.plugins_.Rex_SysExt = function(runtime)
+{
+	this.runtime = runtime;
+};
+
+(function ()
+{
+	var pluginProto = cr.plugins_.Rex_SysExt.prototype;
+		
+	/////////////////////////////////////
+	// Object type class
+	pluginProto.Type = function(plugin)
+	{
+		this.plugin = plugin;
+		this.runtime = plugin.runtime;
+	};
+	
+	var typeProto = pluginProto.Type.prototype;
+
+	typeProto.onCreate = function()
+	{
+	};
+
+	/////////////////////////////////////
+	// Instance class
+	pluginProto.Instance = function(type)
+	{
+		this.type = type;
+		this.runtime = type.runtime;
+	};
+	
+	var instanceProto = pluginProto.Instance.prototype;
+
+	instanceProto.onCreate = function()
+	{
+        this.tmp_insts = [];
+	};
+    instanceProto._pick_all = function (objtype)
+	{
+        if (!objtype)
+            return false;
+		if (!objtype.instances.length)
+			return false;            
+
+        // Get the current sol and reset the select_all flag
+        var sol = objtype.getCurrentSol();
+        sol.select_all = true;
+		objtype.applySolToContainer();
+        return true;
+	}; 
+    instanceProto._pick_inverse = function (objtype, uid, is_pick_all)
+	{
+        if (!objtype)
+            return false;
+		if (!objtype.instances.length)
+			return false;
+                    
+        var sol = objtype.getCurrentSol();  
+        if (is_pick_all==1)
+        {
+            sol.select_all = true;  
+            cr.shallowAssignArray(sol.instances, sol.getObjects());
+        }
+
+        var insts = sol.instances;        
+        var insts_length = insts.length;
+        var i, inst;
+        var index = -1;
+
+        for (i=0; i < insts_length; i++)
+        {
+            inst = insts[i];
+            if (inst.uid == uid)
+            {
+                index = i;
+                break;
+            }
+        }
+        
+        if (index != -1)
+            cr.arrayRemove(insts, index);
+        sol.select_all = false; 
+        objtype.applySolToContainer();
+        return (sol.instances.length != 0);        
+	};      
+    instanceProto._quick_pick = function (objtype, uid)
+	{	    
+        if (!objtype)
+            return;
+		if (!objtype.instances.length)
+			return;
+        
+        var inst = this.runtime.getObjectByUID(uid);
+        var is_find = (inst != null);
+        if (is_find)
+        {
+            var type_name = inst.type.name;
+            if (objtype.is_family)
+            {
+                is_find = false;
+                var members = objtype.members;
+                var cnt = members.length;
+                var i;
+                for (i=0; i<cnt; i++)
+                {
+                    if (type_name == members[i].name)
+                    {
+                        is_find = true;
+                        break;
+                    }
+                }
+            }
+            else
+                is_find = (type_name == objtype.name);
+        }
+        var sol = objtype.getCurrentSol();  
+        if (is_find)
+            sol.pick_one(inst);
+        else
+            sol.instances.length = 0;
+        sol.select_all = false;
+        objtype.applySolToContainer();
+        return is_find;
+	};        
+    instanceProto._get_layer = function(layerparam)
+    {
+        return (typeof layerparam == "number")?
+               this.runtime.getLayerByNumber(layerparam):
+               this.runtime.getLayerByName(layerparam);
+    };    
+	var GetInstPropertyValue = function(inst, prop_index)
+	{
+	    var val;
+	    switch(prop_index)
+	    {
+	    case 0:   // uid
+	        val = inst.uid;
+	        break;
+	    case 1:   // x
+	        val = inst.x;
+	        break;	
+	    case 2:   // y
+	        val = inst.y;
+	        break;	        
+	    case 3:   // width
+	        val = inst.width;
+	        break;	
+	    case 4:   // height
+	        val = inst.height;
+	        break;	
+	    case 5:   // angle
+	        val = inst.angle;
+	        break;
+	    case 6:   // opacity
+	        val = inst.opacity;
+	        break;	
+	    default:
+	        val = 0;
+	        break;	  	        	            
+	    }
+	    return val;
+	};	
+	//////////////////////////////////////
+	// Conditions
+	function Cnds() {};
+	pluginProto.cnds = new Cnds();    
+
+	Cnds.prototype.PickAll = function (objtype)
+	{
+		return this._pick_all(objtype);;
+	};
+ 
+	Cnds.prototype.PickInverse = function (objtype, uid, is_pick_all)
+	{
+        return this._pick_inverse(objtype, uid, is_pick_all);
+	};     
+ 
+	Cnds.prototype.QuickPickByUID = function (objtype, uid)
+	{
+        return this._quick_pick(objtype, uid);
+	};        
+	//////////////////////////////////////
+	// Actions
+	function Acts() {};
+	pluginProto.acts = new Acts();
+
+    Acts.prototype.PickAll = function (objtype)
+	{
+        this._pick_all(objtype);
+	}; 
+    
+    Acts.prototype.PickByUID = function (objtype, uid, is_pick_all)
+	{  
+        if (!objtype)
+            return;
+		if (!objtype.instances.length)
+			return;
+       
+        var sol = objtype.getCurrentSol();  
+        if (is_pick_all==1)
+            sol.select_all = true;  
+            
+        var insts = sol.getObjects();
+        var insts_length = insts.length;
+        var i, inst;
+        var is_find = false;
+
+        for (i=0; i < insts_length; i++)
+        {
+            inst = insts[i];
+            if (inst.uid == uid)
+            {
+                is_find = true;
+                break;
+            }
+        }
+        
+        if (is_find)
+            sol.pick_one(inst);
+        else
+            sol.instances.length = 0;
+            
+        sol.select_all = false;
+        objtype.applySolToContainer();
+	}; 
+    
+    Acts.prototype.QuickPickByUID = function (objtype, uid)
+	{	    
+        this._quick_pick(objtype, uid);
+	};    
+        
+    Acts.prototype.PickByPropCmp = function (objtype, prop_index, cmp, value, is_pick_all)
+	{
+        if (!objtype)
+            return;
+		if (!objtype.instances.length)
+			return;
+            
+        var sol = objtype.getCurrentSol();  
+        if (is_pick_all==1)
+            sol.select_all = true;  
+            
+        var insts = sol.getObjects();
+        var insts_length = insts.length;
+        var i, inst;
+        this.tmp_insts.length = 0;
+
+        for (i=0; i < insts_length; i++)
+        {
+            inst = insts[i];
+            if (cr.do_cmp(GetInstPropertyValue(inst, prop_index), cmp, value))
+                this.tmp_insts.push(inst);
+        }
+        cr.shallowAssignArray(sol.instances, this.tmp_insts);
+        sol.select_all = false;
+	};  
+
+    Acts.prototype.SetGroupActive = function (group, active)
+    {
+		var activeGroups = this.runtime.activeGroups;
+        
+        if (activeGroups[group] == null)
+        {
+            alert("Group '" + group + "' does not exist");
+            return;
+        }
+        
+		group = group.toLowerCase();
+		
+		switch (active) {
+		// Disable
+		case 0:
+			delete activeGroups[group];
+			break;
+		// Enable
+		case 1:
+			activeGroups[group] = true;
+			break;
+		// Toggle
+		case 2:
+			if (activeGroups[group])
+				delete activeGroups[group];
+			else
+				activeGroups[group] = true;
+			break;
+		}
+    };
+
+    Acts.prototype.SetLayerVisible = function (layerparam, visible_)
+    {
+        var layer;
+		if (cr.is_number(layerparam))
+			layer = this.runtime.getLayerByNumber(layerparam);
+		else
+			layer = this.runtime.getLayerByName(layerparam);
+                
+        if (!layer)
+            return;
+
+        var is_visible = (visible_ == 1);
+		if (layer.visible !== is_visible)
+		{
+			layer.visible = is_visible;
+			this.runtime.redraw = true;
+		}
+    }; 
+
+    Acts.prototype.PickInverse = function (objtype, uid, is_pick_all)
+	{
+        this._pick_inverse(objtype, uid, is_pick_all);
+	};     
+	//////////////////////////////////////
+	// Expressions
+	function Exps() {};
+	pluginProto.exps = new Exps();
+
+    Exps.prototype.Eval = function (ret, code_string)
+	{
+	    ret.set_any( eval( "("+code_string+")" ) );
+	};
+
+    Exps.prototype.ToHexString = function (ret, decval)
+	{
+	    ret.set_string( decval.toString(16) );
+	};  
+}());

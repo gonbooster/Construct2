@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,width=device-width,user-scalable=0"/>
+		<title>Clay.io WebView</title>
+		<style type='text/css'>
+		html {
+			background: rgba(0, 0, 0, 0);
+		}
+		</style>
+		<script type="text/javascript" src="../CocoonJS.js"></script>
+		<script type="text/javascript" src="../CocoonJS_App.js"></script>
+		<script type="text/javascript" src="../CocoonJS_App_ForWebView.js"></script>
+		<link rel='stylesheet' href='api.css' />
+	</head>
+	<body>
+		<script type="text/javascript">
+			var Clay = window['Clay'] = {};
+			var ClayPay;
+			var ClayRooms;
+			
+			window.addEventListener( 'load', function() {
+				// Make sure it's hiding the window at first...
+				if( Clay['UI'] && Clay['UI']['modalsOpen'] && ['modalsOpen']() === 0 )
+					CocoonJS.App.hide();
+			} );
+
+			function load_clay( gameKey, debugMode ) {
+				Clay['options'] = { debug: debugMode, localCSS: true, fail: function() {
+					CocoonJS.App.forwardAsync( "clay_from_cocoon_fail();" );
+				} };
+				
+				Clay['gameKey'] = gameKey;
+				Clay['readyFunctions'] = [];
+				Clay['ready'] = function( fn ) {
+					Clay['readyFunctions'].push( fn );
+				};
+				
+				Clay['PROTOCOL'] = "http://";
+					
+				
+				( function() {
+					var clay = document.createElement( "script" );
+					clay.src = "api.js"; 
+					var tag = document.getElementsByTagName( "script" )[0]; tag.parentNode.insertBefore( clay, tag );
+				} )();
+			
+				Clay['ready']( function() {
+					ClayPay = new Clay['Payment']();
+					var username = ( Clay.Player.data && Clay.Player.data.username ) ? Clay.Player.data.username.replace( "'", "\'" ) : '';
+					CocoonJS.App.forwardAsync( "clay_from_cocoon_ready( '" + Clay.Player.identifier + "', '" + username + "', '" + Clay.Player.loggedIn + "', '" + Clay.Player.clearance + "', '" + Clay.Player.hasInstalled() + "' );" );					
+
+					Clay['Player']['onLogin']( function() {
+						var username = ( Clay.Player.data && Clay.Player.data.username ) ? Clay.Player.data.username.replace( "'", "\'" ) : '';
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_user_ready( '" + Clay.Player.identifier + "', '" + username + "', '" + Clay.Player.loggedIn + "', '" + Clay.Player.clearance + "', '" + Clay.Player.hasInstalled() + "' );" );					
+					} );
+				} );
+			}
+			
+			function leaderboards_post( PlayerName, PlayerPoints, LeaderboardID, ShowNotification ) {
+				var scoreObj = {
+					"name": PlayerName
+				};
+				
+				if( PlayerPoints )
+					scoreObj["score"] = parseInt( PlayerPoints );
+				else
+					scoreObj["score"] = 0;
+					
+				if( ShowNotification != 0 && ShowNotification != '0' ) // 0 = yes, 1 = no
+					scoreObj["hideUI"] = true;
+					
+				var leaderboard = new Clay['Leaderboard']( { id: LeaderboardID } );
+
+				leaderboard['post']( scoreObj, function() {
+					CocoonJS.App.forwardAsync( "clay_from_cocoon_leaderboards_post();" );
+				} );
+			}
+			
+			function leaderboards_post_encrypted( LeaderboardID, JWT ) {
+				var leaderboard = new Clay['Leaderboard']( { id: LeaderboardID } );
+				leaderboard['post']( JWT, function() {
+					CocoonJS.App.forwardAsync( "clay_from_cocoon_leaderboards_post();" );
+				} );
+			}
+			
+			function leaderboards_show( LeaderboardID, Mode, Type, Sort, ScoresFrom, NumScores ) {
+				var recent = 0;
+				if( !NumScores )
+					NumScores = 10;
+				switch( Mode )
+				{
+					case 0:
+						recent = 0;
+						break;
+					case 1:
+						recent = 3600 * 24 * 30;
+						break;
+					case 2:
+						recent = 3600 * 24 * 7;
+						break;
+					case 3:
+						recent = 3600 * 24;
+						break;
+					default:
+						recent = 0;
+				}
+				var options = {
+					"cumulative": ( Type === 1 ),
+					"best": ( Type === 2 ),
+					"self": ( ScoresFrom === 1 ) ? true : false,
+					"friends": ( ScoresFrom === 2 ) ? true : false,
+					"recent": recent,
+					"sort": ( Sort === 1 ) ? 'asc' : 'desc',
+					"limit": NumScores
+				}
+				var leaderboard = new Clay['Leaderboard']( { id: LeaderboardID } );
+				leaderboard['show']( options );
+			}			
+			
+			function leaderboards_fetch( LeaderboardID, Mode, Type, Sort, ScoresFrom, NumScores ) {
+				var recent = 0;
+				if( !NumScores )
+					NumScores = 10;
+				switch( Mode )
+				{
+					case 0:
+						recent = 0;
+						break;
+					case 1:
+						recent = 3600 * 24 * 30;
+						break;
+					case 2:
+						recent = 3600 * 24 * 7;
+						break;
+					case 3:
+						recent = 3600 * 24;
+						break;
+					default:
+						recent = 0;
+				}
+				var options = {
+					"cumulative": ( Type === 1 ),
+					"best": ( Type === 2 ),
+					"self": ( ScoresFrom === 1 ) ? true : false,
+					"friends": ( ScoresFrom === 2 ) ? true : false,
+					"recent": recent,
+					"sort": ( Sort === 1 ) ? 'asc' : 'desc',
+					"limit": NumScores,
+					"getRank": true
+				}
+				var leaderboard = new Clay['Leaderboard']( { id: LeaderboardID } );
+				var leaderboardRank = null;
+				var leaderboardRankScore = null;
+				var leaderboardRankName = '';
+				leaderboard['fetch']( options, function( results ) {
+					var leaderboardData = JSON.stringify( results['data'] ).replace( "'", "\'" ) || [];
+		
+					if( results['rank']['rank'] ) {
+						leaderboardRank = results['rank']['rank'];
+						leaderboardRankScore = results['rank']['row']['score'];
+						leaderboardRankName = results['rank']['row']['name'] || '';
+					}
+					leaderboardScoreCount = results && results['data'] ? results['data'].length - 1 : 0; // minus 1 so we can do 0 -> lbscore
+					if( leaderboardScoreCount < 0 ) leaderboardScoreCount = 0;
+					
+					var LeaderboardIDStr = '';
+					if( typeof LeaderboardID == 'string' )
+						LeaderboardIDStr += "'";
+					LeaderboardIDStr += LeaderboardID;
+					if( typeof LeaderboardID == 'string' )
+						LeaderboardIDStr += "'";
+					
+					CocoonJS.App.forwardAsync( "clay_from_cocoon_leaderboards_fetch( " + LeaderboardIDStr + ", '" + leaderboardData + "', " + leaderboardScoreCount + ", " + leaderboardRank + ", " + leaderboardRankScore + ", '" + leaderboardRankName.replace( "'", "\'" ) + "' );" );
+				} );
+			}
+			
+			
+			function achievements_award( AchievementId, showNotification ) {
+				var AchievementIDStr = '';
+				if( typeof AchievementId == 'string' )
+					AchievementIDStr += "'";
+				AchievementIDStr += AchievementId;
+				if( typeof AchievementId == 'string' )
+					AchievementIDStr += "'";
+					
+							
+				var options = { id: AchievementId };
+				if( showNotification != 0 ) // 0 = yes, 1 = no
+					options["hideUI"] = true;
+								
+				var achievement = new Clay['Achievement']( options );
+				achievement['award']( function( response ) {
+
+					if( response.success )
+					{
+						var response = JSON.stringify( items ).replace( "'", "\'" );
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_achievements_award( " + AchievementIDStr + ", '" + response + "' );" );
+					}
+				} );
+			}
+			
+			
+			function achievements_award_encrypted( JWT ) {
+				var achievement = new Clay['Achievement']( { jwt: JWT } );
+				achievement['award']( function( response ) {
+					if( response.success )
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_achievements_award();" );
+				} );
+			}
+			
+			function achievements_show_all() {
+				Clay['Achievement']['showAll']();
+			}
+			
+			function achievements_fetch_all() {
+				Clay['Achievement']['fetchAll']( {}, function( results ) {
+					var data = JSON.stringify( results['data'] ).replace( "'", "\'" );
+					CocoonJS.App.forwardAsync( "clay_from_cocoon_achievements_fetch( '" + data + "' );" );	
+				} );
+			}
+			
+			function screenshot_show( DataURL, ShowNotification ) {
+				var screenshot = new Clay['Screenshot']( { prompt: false } );
+				screenshot.data = DataURL;
+				var options = {};
+				if( ShowNotification != 0 ) // 0 = yes, 1 = no
+					options["hideUI"] = true;
+				
+				screenshot.save( options, function( response ) {
+					if( response.success ) {
+						var screenshotSrc = response.imageSrc;
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_screenshot_show( '" + screenshotSrc + "', " + showNotification + " );" );
+					}
+				} );
+			}
+			
+			function facebook_post( Message, URL, Picture, ShowNotification ) {
+				var fb = new Clay['Facebook']();
+		
+				var options = { message: Message };
+				if( ShowNotification != 0 ) // 0 = yes, 1 = no
+					options["hideUI"] = true;
+					
+				if( URL != '' )
+					options['link'] = URL;
+				if( Picture != '' )
+					options['picture'] = Picture;
+		
+				fb.post( options, function( response ) {
+				    if( response.success )
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_facebook_post();" );
+				} );
+			}
+			
+			function facebook_invite( Caption ) {
+				var options = {};
+					
+				if( Caption !== '' )
+					options['caption'] = Caption;
+				Clay['Facebook']['invite']( options, function( response ) {
+				    if( response.success )
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_facebook_invite();" );			
+				} );
+			}
+			
+			function twitter_post( Message, ShowNotification ) {
+				var stream = new Clay['Twitter']();
+				
+				var options = { message: Message };
+				if( ShowNotification != 0 ) // 0 = yes, 1 = no
+					options["hideUI"] = true;
+				stream.post( options, function( response ) {
+				    if( response.success )
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_twitter_post();" );			
+				} );
+			}
+			
+			function clay_post( Message, ShowNotification ) {
+				var stream = new Clay['Stream']();
+				
+				var options = { message: Message };
+				if( ShowNotification != 0 ) // 0 = yes, 1 = no
+					options["hideUI"] = true;
+				stream.post( options, function( response ) {
+				    if( response.success )
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_clay_post();" );			
+				} );
+			}
+			
+			function clay_add_payment_item( ItemId ) {
+				ClayPay['addItem']( { id: ItemID }, function( response ) {
+					if( response.success )
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_clay_add_payment_item();" );			
+				} );
+			}
+			
+			function clay_remove_player_item( ItemId ) {
+				Clay['Player']['removeItem']( { id: ItemID }, function( response ) {
+					CocoonJS.App.forwardAsync( "clay_from_cocoon_clay_remove_player_item();" );			
+				} );
+			}
+			
+			function clay_checkout() {
+				ClayPay['checkout']( function( response ) {
+					if( response.success )
+					{
+						var paymentResponse = response.itemIds;
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_clay_checkout( '" + paymentResponse + "' );" );			
+					}
+					else if( response.jwt ) // encrypted string sent back
+					{
+						var paymentResponse = response.jwt;
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_clay_checkout( '" + paymentResponse + "' );" );			
+					}
+					else
+					{
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_clay_checkout_fail();" );					
+					}
+				} );
+			}
+			
+			function clay_fetch_items() {
+				Clay['Player']['fetchItems']( function( items ) {		
+					var fetchedItems = JSON.stringify( items ).replace( "'", "\'" );
+					CocoonJS.App.forwardAsync( "clay_from_cocoon_clay_fetch_items( '" + fetchedItems + "' );" );			
+				} );
+			}
+			
+			function clay_purchase_game() {
+				ClayPay['purchaseGame']( function( response ) {
+					if( response.success )
+					{
+						var paymentResponse = response.itemIds;
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_clay_checkout( '" + paymentResponse + "' );" );			
+					}
+					else if( response.jwt ) // encrypted string sent back
+					{
+						var paymentResponse = response.jwt;
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_clay_checkout( '" + paymentResponse + "' );" );			
+					}
+					else
+					{
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_clay_checkout_fail();" );					
+					}
+				} );
+			}
+			
+			function clay_rooms() {
+				// Only create the obj if it hasn't been created yet...
+				if( !ClayRooms )
+				{
+					ClayRooms = new Clay['Rooms']( function( roomJoined ) {
+						// Called when room is full
+						roomCount = roomJoined.count; // # of people in room
+						roomID = roomJoined.id; // the room joined
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_clay_rooms_full();" );					
+					} );
+				}
+				
+				ClayRooms['show']( function( rooms ) {
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_clay_rooms_show();" );					
+				} );
+			}
+			
+			function clay_fetch_data( Key ) {
+				Clay['Player']['fetchUserData']( Key, function( response ) {
+					var persistentData = JSON.stringify( response.data ).replace( "'", "\'" );
+					var lastFetchedKey = Key.replace( "'", "\'" );
+					CocoonJS.App.forwardAsync( "clay_from_cocoon_clay_fetch_data( '" + persistentData + "', '" + lastFetchedKey + "' );" );					
+				} );
+			}
+			
+			function clay_save_data( Key, Data ) {
+				Data = JSON.parse( Data );
+				Clay['Player']['saveUserData']( Key, Data, function( response ) {
+					if( response.success )
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_clay_save_data();" );					
+					else
+						Clay['log']( response.error );	    
+				} );
+			}
+			
+			function clay_prompt_login() {
+				Clay['Player']['login']( function( response ) {
+					if( response.success )
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_clay_prompt_login();" );					
+				} );
+			}
+			
+			function clay_prompt_logout() {
+				Clay['Player']['logout']( {}, function( response ) {
+					if( response.success )
+						CocoonJS.App.forwardAsync( "clay_from_cocoon_clay_prompt_logout();" );					
+				} );
+			}
+			
+			function clay_set_game_key() {
+				Clay['Game']['set']( { key: this.properties[0], debug: this.properties[1] == 0 }, function() {
+					CocoonJS.App.forwardAsync( "clay_from_cocoon_clay_set_game_key();" );					
+				} );
+			}
+		</script>
+	</body>
+</html>
